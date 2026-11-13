@@ -3,6 +3,19 @@ import type { Route } from "./+types/layout.app";
 import { Sidebar } from "~/components/sidebar";
 import { DevUI } from "~/components/dev-ui";
 import { Toaster } from "sonner";
+// PROTOTYPE (ticket #5): Notification feed variants
+import {
+  PrototypeSwitcher,
+  VariantABell,
+  VariantBNavItem,
+  VariantCTopBar,
+  useProtoFeed,
+  useProtoVariant,
+} from "~/components/prototype-notification-feed";
+import {
+  buildPrototypeFeed,
+  buildPrototypeIncoming,
+} from "~/lib/prototype-notification-feed.server";
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { eq, and, or, sql, desc } from "drizzle-orm";
@@ -213,10 +226,23 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    protoFeed: buildPrototypeFeed(
+      currentUser?.role ?? null,
+      currentUserId ? isTeamAdmin(currentUserId) : false
+    ),
+    protoIncoming: buildPrototypeIncoming(
+      currentUser?.role ?? null,
+      currentUserId ? isTeamAdmin(currentUserId) : false
+    ),
   };
 }
 
 export default function AppLayout({ loaderData }: Route.ComponentProps) {
+  // PROTOTYPE: remount feed state when the DevUI user changes
+  return <AppLayoutInner key={loaderData.currentUser?.id ?? "anon"} loaderData={loaderData} />;
+}
+
+function AppLayoutInner({ loaderData }: Pick<Route.ComponentProps, "loaderData">) {
   const {
     users,
     currentUser,
@@ -226,6 +252,10 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countries,
     isTeamAdmin: userIsTeamAdmin,
   } = loaderData;
+  const variant = useProtoVariant();
+  const feed = useProtoFeed(loaderData.protoFeed, loaderData.protoIncoming);
+  // Platform Admins receive no Notifications: no bell at all.
+  const hasFeed = !!currentUser && currentUser.role !== "admin";
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -233,8 +263,15 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        protoHeaderSlot={
+          hasFeed && variant === "A" ? <VariantABell feed={feed} /> : null
+        }
+        protoNavSlot={
+          hasFeed && variant === "B" ? <VariantBNavItem feed={feed} /> : null
+        }
       />
       <main className="flex-1 overflow-y-auto">
+        {hasFeed && variant === "C" && <VariantCTopBar feed={feed} />}
         <Outlet />
       </main>
       <DevUI
@@ -245,6 +282,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         countries={countries}
       />
       <Toaster position="bottom-right" richColors closeButton />
+      <PrototypeSwitcher feed={feed} />
     </div>
   );
 }
