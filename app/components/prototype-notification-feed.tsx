@@ -64,7 +64,7 @@ export interface ProtoFeed {
   toggleRead: (id: string) => void;
   markAllRead: () => void;
   markAllSeen: () => void;
-  push: () => void;
+  push: (count?: number) => void;
   empty: () => void;
   reset: () => void;
 }
@@ -95,19 +95,23 @@ export function useProtoFeed(
       ),
     markAllRead: () => setItems((xs) => xs.map((n) => ({ ...n, read: true }))),
     markAllSeen: () => setSeenIds(new Set(items.map((n) => n.id))),
-    push: () => {
+    push: (count = 1) => {
       if (incoming.length === 0) return;
-      const template = incoming[counter.current % incoming.length];
-      counter.current += 1;
-      setItems((xs) => [
-        {
+      const fresh: ProtoNotification[] = [];
+      for (let i = 0; i < count; i++) {
+        const template = incoming[counter.current % incoming.length];
+        counter.current += 1;
+        fresh.unshift({
           ...template,
-          id: `live-${Date.now()}`,
-          createdAt: new Date().toISOString(),
+          id: `live-${counter.current}-${Date.now()}`,
+          // spread a batch over the last few minutes so times differ
+          createdAt: new Date(Date.now() - (count - 1 - i) * 90_000).toISOString(),
           read: false,
-        },
-        ...xs,
-      ]);
+        });
+      }
+      setItems((xs) =>
+        [...fresh, ...xs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      );
     },
     empty: () => setItems([]),
     reset: () => {
@@ -502,7 +506,7 @@ export function VariantCTopBar({ feed }: { feed: ProtoFeed }) {
         {open && (
           <div
             ref={panel}
-            className="absolute right-0 top-11 w-[30rem] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl"
+            className="absolute right-0 top-11 flex max-h-[min(32rem,calc(100vh-5rem))] w-[30rem] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl"
           >
             {feed.items.length === 0 ? (
               <div className="px-6 py-10 text-center text-sm text-muted-foreground">
@@ -511,6 +515,8 @@ export function VariantCTopBar({ feed }: { feed: ProtoFeed }) {
               </div>
             ) : (
               <>
+                {/* the list scrolls; the footer below stays pinned */}
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 <table className="w-full text-sm">
                   <tbody>
                     {feed.items.map((n) => (
@@ -543,7 +549,8 @@ export function VariantCTopBar({ feed }: { feed: ProtoFeed }) {
                     ))}
                   </tbody>
                 </table>
-                <div className="flex justify-between border-t bg-muted/40 px-3 py-2 text-xs">
+                </div>
+                <div className="flex shrink-0 justify-between border-t bg-muted/40 px-3 py-2 text-xs">
                   <span className="text-muted-foreground">
                     {feed.unreadCount} unread
                   </span>
@@ -832,8 +839,11 @@ export function PrototypeSwitcher({ feed }: { feed: ProtoFeed }) {
         <ChevronRight className="size-4" />
       </button>
       <span className="mx-1 h-4 w-px bg-white/30" />
-      <button className={btn} onClick={feed.push} title="Simulate a real-time arrival">
+      <button className={btn} onClick={() => feed.push()} title="Simulate a real-time arrival">
         + event
+      </button>
+      <button className={btn} onClick={() => feed.push(10)} title="Flood the feed with 10 arrivals">
+        +10
       </button>
       <button className={btn} onClick={feed.empty}>
         empty
