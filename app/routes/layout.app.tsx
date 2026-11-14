@@ -9,6 +9,7 @@ import {
   VariantABell,
   VariantBNavItem,
   VariantCTopBar,
+  VariantDSkim,
   useProtoFeed,
   useProtoVariant,
 } from "~/components/prototype-notification-feed";
@@ -264,7 +265,11 @@ function AppLayoutInner({ loaderData }: Pick<Route.ComponentProps, "loaderData">
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
         protoHeaderSlot={
-          hasFeed && variant === "A" ? <VariantABell feed={feed} /> : null
+          hasFeed && variant === "A" ? (
+            <VariantABell feed={feed} />
+          ) : hasFeed && variant === "D" ? (
+            <VariantDSkim feed={feed} />
+          ) : null
         }
         protoNavSlot={
           hasFeed && variant === "B" ? <VariantBNavItem feed={feed} /> : null

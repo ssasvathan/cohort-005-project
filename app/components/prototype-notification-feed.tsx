@@ -10,6 +10,8 @@
 //   B  Sidebar nav item + drawer   Unread/All tabs, date groups, drawer stays open
 //   C  Top bar bell + dropdown     badge counts UNSEEN: opening clears the badge,
 //                                  rows stay highlighted until clicked
+//   D  Skimmable feed              coloured kind headline, the thing it's about
+//                                  as the big line, who/where muted, kind filters
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
@@ -17,6 +19,8 @@ import {
   BellOff,
   Check,
   CheckCheck,
+  CircleCheck,
+  CircleX,
   ChevronLeft,
   ChevronRight,
   MessageSquare,
@@ -31,12 +35,13 @@ import type {
   ProtoNotificationKind,
 } from "~/lib/prototype-notification-feed.server";
 
-export const PROTO_VARIANTS = ["A", "B", "C"] as const;
+export const PROTO_VARIANTS = ["A", "B", "C", "D"] as const;
 export type ProtoVariant = (typeof PROTO_VARIANTS)[number];
 const VARIANT_NAMES: Record<ProtoVariant, string> = {
   A: "Sidebar bell + popover",
   B: "Nav item + drawer",
   C: "Top bar + seen/unread",
+  D: "Skimmable: headline + title + filters",
 };
 
 export function useProtoVariant(): ProtoVariant {
@@ -525,10 +530,9 @@ export function VariantCTopBar({ feed }: { feed: ProtoFeed }) {
                         <td className="w-8 py-2 pl-3">{KIND_ICON[n.kind]}</td>
                         <td
                           className={cn(
-                            "max-w-0 truncate py-2 pr-2",
+                            "py-2 pr-2 leading-snug",
                             n.read && "text-muted-foreground"
                           )}
-                          title={n.text}
                         >
                           <Sentence n={n} />
                         </td>
@@ -556,6 +560,221 @@ export function VariantCTopBar({ feed }: { feed: ProtoFeed }) {
         )}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Variant D — built for skimming. Every row reads top-down as:
+//   [kind tile]  WHAT HAPPENED (coloured)                 time
+//                The thing it's about (lesson / course)   ← the big line
+//                Who · where (muted)
+// plus filter chips by kind, so an Instructor can jump to just Lesson Questions.
+// ---------------------------------------------------------------------------
+
+const D_KIND: Record<
+  ProtoNotificationKind,
+  { headline: string; tile: string; text: string; icon: React.ReactNode; filter: string }
+> = {
+  "refund-approved": {
+    headline: "Refund approved",
+    tile: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+    text: "text-green-700 dark:text-green-400",
+    icon: <CircleCheck className="size-5" />,
+    filter: "Refunds",
+  },
+  "refund-declined": {
+    headline: "Refund declined",
+    tile: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+    text: "text-amber-700 dark:text-amber-400",
+    icon: <CircleX className="size-5" />,
+    filter: "Refunds",
+  },
+  "lesson-question": {
+    headline: "New Lesson Question",
+    tile: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+    text: "text-blue-700 dark:text-blue-400",
+    icon: <MessageSquare className="size-5" />,
+    filter: "Questions",
+  },
+  reply: {
+    headline: "Reply to your question",
+    tile: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+    text: "text-violet-700 dark:text-violet-400",
+    icon: <MessageSquareReply className="size-5" />,
+    filter: "Replies",
+  },
+  "seat-claimed": {
+    headline: "Seat claimed",
+    tile: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+    text: "text-teal-700 dark:text-teal-400",
+    icon: <UserPlus className="size-5" />,
+    filter: "Seats",
+  },
+};
+
+function dMeta(n: ProtoNotification) {
+  switch (n.kind) {
+    case "refund-approved":
+      return "Cadence approved your Refund Request";
+    case "refund-declined":
+      return "See the note from Cadence";
+    case "seat-claimed":
+      return `${n.actor} joined your team`;
+    default:
+      return [n.actor, n.context].filter(Boolean).join(" · ");
+  }
+}
+
+export function VariantDSkim({ feed }: { feed: ProtoFeed }) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<string>("All");
+  const btn = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useClickOutside(open, close, [btn, panel]);
+  const go = useGo("D");
+
+  const filters = [
+    "All",
+    ...Array.from(new Set(feed.items.map((n) => D_KIND[n.kind].filter))),
+  ];
+  const unreadIn = (f: string) =>
+    feed.items.filter(
+      (n) => !n.read && (f === "All" || D_KIND[n.kind].filter === f)
+    ).length;
+  const shown =
+    filter === "All"
+      ? feed.items
+      : feed.items.filter((n) => D_KIND[n.kind].filter === filter);
+
+  return (
+    <>
+      <button
+        ref={btn}
+        onClick={() => setOpen((o) => !o)}
+        title="Notifications"
+        className="relative ml-auto rounded-md p-1.5 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      >
+        <Bell className="size-4" />
+        <Badge count={feed.unreadCount} className="absolute -right-1 -top-1" />
+      </button>
+      {open && (
+        <div
+          ref={panel}
+          className="fixed left-[14.5rem] top-2 z-40 flex max-h-[85vh] w-[28rem] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl"
+        >
+          <div className="flex items-center justify-between px-4 pt-3">
+            <span className="font-semibold">Notifications</span>
+            <button
+              onClick={feed.markAllRead}
+              disabled={feed.unreadCount === 0}
+              className="text-xs font-medium text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
+            >
+              Mark all read
+            </button>
+          </div>
+          {filters.length > 2 && (
+            <div className="flex flex-wrap gap-1.5 border-b px-4 py-2.5">
+              {filters.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={cn(
+                    "flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs",
+                    filter === f
+                      ? "border-foreground bg-foreground text-background"
+                      : "text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  {f}
+                  {unreadIn(f) > 0 && (
+                    <span className="font-bold">{unreadIn(f)}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {filters.length <= 2 && <div className="border-b pt-2.5" />}
+          {shown.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 px-6 py-12 text-center text-sm text-muted-foreground">
+              <BellOff className="size-8" />
+              <div className="font-medium text-foreground">
+                No notifications yet
+              </div>
+            </div>
+          ) : (
+            <ul className="overflow-y-auto">
+              {shown.map((n) => {
+                const k = D_KIND[n.kind];
+                return (
+                  <li
+                    key={n.id}
+                    onClick={() => {
+                      feed.markRead(n.id);
+                      setOpen(false);
+                      go(n.href);
+                    }}
+                    className={cn(
+                      "group relative flex cursor-pointer gap-3 border-b px-4 py-3 last:border-0 hover:bg-muted/60",
+                      n.read && "opacity-60 hover:opacity-100"
+                    )}
+                  >
+                    {!n.read && (
+                      <span className="absolute left-0 top-0 h-full w-1 bg-primary" />
+                    )}
+                    <div
+                      className={cn(
+                        "flex size-10 shrink-0 items-center justify-center rounded-lg",
+                        k.tile
+                      )}
+                    >
+                      {k.icon}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span
+                          className={cn(
+                            "text-xs font-semibold uppercase tracking-wide",
+                            k.text
+                          )}
+                        >
+                          {k.headline}
+                        </span>
+                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                          <Time iso={n.createdAt} />
+                        </span>
+                      </div>
+                      <div
+                        className={cn(
+                          "mt-0.5 line-clamp-2 text-[15px] leading-snug",
+                          n.read ? "font-normal" : "font-semibold"
+                        )}
+                        title={n.text}
+                      >
+                        {n.subject}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {dMeta(n)}
+                      </div>
+                    </div>
+                    <button
+                      title={n.read ? "Mark unread" : "Mark read"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        feed.toggleRead(n.id);
+                      }}
+                      className="self-center rounded-md p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground group-hover:opacity-100"
+                    >
+                      <Check className="size-4" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 

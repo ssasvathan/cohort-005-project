@@ -20,6 +20,7 @@ export interface ProtoNotification {
   actor: string | null;
   text: string; // full sentence from the catalogue
   subject: string; // course or lesson title, for emphasis
+  context?: string; // course title, when the subject is a lesson
   href: string;
   createdAt: string;
   read: boolean;
@@ -83,6 +84,7 @@ export function buildPrototypeFeed(
         kind: "lesson-question",
         actor: s.student(i),
         subject: l.lessonTitle,
+        context: l.courseTitle,
         text: `${s.student(i)} asked a question on ${l.lessonTitle}.`,
         href: lessonHref(i, 100 + i),
         createdAt: ago([4, 50, 180, 1500, 4400][i]),
@@ -95,6 +97,7 @@ export function buildPrototypeFeed(
       kind: "reply",
       actor: s.student(3),
       subject: l.lessonTitle,
+      context: l.courseTitle,
       text: `${s.student(3)} replied to your question on ${l.lessonTitle}.`,
       href: lessonHref(5, 210),
       createdAt: ago(95),
@@ -122,6 +125,7 @@ export function buildPrototypeFeed(
         kind: "reply",
         actor: "Instructor",
         subject: s.lesson(2).lessonTitle,
+        context: s.lesson(2).courseTitle,
         text: `Instructor replied to your question on ${s.lesson(2).lessonTitle}.`,
         href: lessonHref(2, 301),
         createdAt: ago(240),
@@ -142,6 +146,7 @@ export function buildPrototypeFeed(
         kind: "reply",
         actor: s.student(1),
         subject: s.lesson(3).lessonTitle,
+        context: s.lesson(3).courseTitle,
         text: `${s.student(1)} replied to your question on ${s.lesson(3).lessonTitle}.`,
         href: lessonHref(3, 302),
         createdAt: ago(9000),
