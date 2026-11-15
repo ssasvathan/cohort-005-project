@@ -8,8 +8,8 @@
 //
 //   A  Sidebar bell + popover      click a row = read + go; per-row read toggle
 //   B  Sidebar nav item + drawer   Unread/All tabs, date groups, drawer stays open
-//   C  Top bar bell + dropdown     badge counts UNSEEN: opening clears the badge,
-//                                  rows stay highlighted until clicked
+//   C  Top bar bell + dropdown     badge counts UNREAD; opening changes nothing,
+//                                  only clicking a row (or Mark all read) reads it
 //   D  Skimmable feed              coloured kind headline, the thing it's about
 //                                  as the big line, who/where muted, kind filters
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -40,7 +40,7 @@ export type ProtoVariant = (typeof PROTO_VARIANTS)[number];
 const VARIANT_NAMES: Record<ProtoVariant, string> = {
   A: "Sidebar bell + popover",
   B: "Nav item + drawer",
-  C: "Top bar + seen/unread",
+  C: "Top bar + unread",
   D: "Skimmable: headline + title + filters",
 };
 
@@ -59,11 +59,9 @@ export function useProtoVariant(): ProtoVariant {
 export interface ProtoFeed {
   items: ProtoNotification[];
   unreadCount: number;
-  unseenCount: number; // only variant C uses this
   markRead: (id: string) => void;
   toggleRead: (id: string) => void;
   markAllRead: () => void;
-  markAllSeen: () => void;
   push: (count?: number) => void;
   empty: () => void;
   reset: () => void;
@@ -74,9 +72,6 @@ export function useProtoFeed(
   incoming: Omit<ProtoNotification, "id" | "createdAt" | "read">[]
 ): ProtoFeed {
   const [items, setItems] = useState(initial);
-  const [seenIds, setSeenIds] = useState<Set<string>>(
-    () => new Set(initial.filter((n) => n.read).map((n) => n.id))
-  );
   const counter = useRef(0);
 
   const markRead = useCallback(
@@ -87,14 +82,12 @@ export function useProtoFeed(
   return {
     items,
     unreadCount: items.filter((n) => !n.read).length,
-    unseenCount: items.filter((n) => !n.read && !seenIds.has(n.id)).length,
     markRead,
     toggleRead: (id) =>
       setItems((xs) =>
         xs.map((n) => (n.id === id ? { ...n, read: !n.read } : n))
       ),
     markAllRead: () => setItems((xs) => xs.map((n) => ({ ...n, read: true }))),
-    markAllSeen: () => setSeenIds(new Set(items.map((n) => n.id))),
     push: (count = 1) => {
       if (incoming.length === 0) return;
       const fresh: ProtoNotification[] = [];
@@ -114,10 +107,7 @@ export function useProtoFeed(
       );
     },
     empty: () => setItems([]),
-    reset: () => {
-      setItems(initial);
-      setSeenIds(new Set(initial.filter((n) => n.read).map((n) => n.id)));
-    },
+    reset: () => setItems(initial),
   };
 }
 
@@ -469,7 +459,7 @@ export function VariantBNavItem({ feed }: { feed: ProtoFeed }) {
 }
 
 // ---------------------------------------------------------------------------
-// Variant C — slim top bar over the page; badge = unseen, highlight = unread
+// Variant C — slim top bar over the page; badge = unread count, highlight = unread
 // ---------------------------------------------------------------------------
 
 export function VariantCTopBar({ feed }: { feed: ProtoFeed }) {
@@ -485,21 +475,16 @@ export function VariantCTopBar({ feed }: { feed: ProtoFeed }) {
       <div className="relative">
         <button
           ref={btn}
-          onClick={() => {
-            if (!open) feed.markAllSeen(); // opening clears the badge
-            setOpen((o) => !o);
-          }}
+          onClick={() => setOpen((o) => !o)} // opening reads nothing
           className="relative flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm hover:bg-muted"
         >
           <Bell className="size-4" />
-          {feed.unseenCount > 0 ? (
-            <span className="font-semibold">{feed.unseenCount} new</span>
+          {feed.unreadCount > 0 ? (
+            <span className="font-semibold">{feed.unreadCount} unread</span>
           ) : (
-            <span className="text-muted-foreground">
-              {feed.unreadCount ? `${feed.unreadCount} unread` : "Inbox"}
-            </span>
+            <span className="text-muted-foreground">Notifications</span>
           )}
-          {feed.unseenCount > 0 && (
+          {feed.unreadCount > 0 && (
             <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-red-600 ring-2 ring-background" />
           )}
         </button>
